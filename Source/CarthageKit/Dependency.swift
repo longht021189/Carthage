@@ -76,7 +76,7 @@ extension Dependency {
 				let ownerAndNameSubstring = String(urlString[urlString.index(urlString.startIndex, offsetBy: startOfOwnerAndNameSubstring)..<urlString.endIndex])
 
 				switch Repository.fromIdentifier(ownerAndNameSubstring as String) {
-				case .success(let server, let repository):
+                case .success((let server, let repository)):
 					self = Dependency.gitHub(server, repository)
 
 				default:
