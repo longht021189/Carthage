@@ -55,6 +55,9 @@ public struct BuildArguments {
 
 	/// The build setting whether full bitcode should be embedded in the binary.
 	public var bitcodeGenerationMode: BitcodeGenerationMode?
+    
+    /// Static Lib Format. default: true
+    public var useStaticLibFormat: Bool = true
 
 	public init(
 		project: ProjectLocator,
@@ -136,6 +139,13 @@ public struct BuildArguments {
 		args += [ "CODE_SIGNING_REQUIRED=NO", "CODE_SIGN_IDENTITY=" ]
 
 		args += [ "CARTHAGE=YES" ]
+        
+        if useStaticLibFormat {
+            args += [
+                "MACH_O_TYPE=staticlib",
+                "DEBUG_INFORMATION_FORMAT=dwarf"
+            ]
+        }
 
 		return args
 	}

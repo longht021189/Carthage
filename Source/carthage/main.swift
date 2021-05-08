@@ -36,7 +36,15 @@ let helpCommand = HelpCommand(registry: registry)
 registry.register(helpCommand)
 
 #if DEBUG
-registry.run(command: "update", arguments: ["--use-xcframeworks", "--platform", "ios", "--no-use-binaries", "--project-directory", "Sample"])
+var pathComponents = URL(fileURLWithPath: #file).pathComponents
+pathComponents.removeLast()
+
+var sampleDir = "\(pathComponents.joined(separator: "/"))/../../Sample"
+sampleDir = sampleDir.replacingOccurrences(of: "//", with: "/")
+
+registry.main(arguments: ["carthage", "update", "--use-xcframeworks", "--platform", "ios", "--no-use-binaries", "--project-directory", sampleDir], defaultVerb: helpCommand.verb) { error in
+    fputs(error.description + "\n", stderr)
+}
 #else
 registry.main(defaultVerb: helpCommand.verb) { error in
     fputs(error.description + "\n", stderr)
