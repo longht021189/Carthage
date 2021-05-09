@@ -301,7 +301,7 @@ extension CarthageError: CustomStringConvertible {
 			case let .gitHub(server, repository):
 				description += "\n\nIf you believe this to be an error, please file an issue with the maintainers at \(server.newIssueURL(for: repository).absoluteString)"
 
-			case .git, .binary:
+            case .git, .binary, .pod:
 				break
 			}
 

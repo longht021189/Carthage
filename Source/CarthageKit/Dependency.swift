@@ -30,6 +30,9 @@ public enum Dependency: Hashable {
 
 	/// A binary-only framework
 	case binary(BinaryURL)
+    
+    /// Cocoapods
+    case pod(PodInfo)
 
 	/// The unique, user-visible name for this project.
 	public var name: String {
@@ -42,6 +45,9 @@ public enum Dependency: Hashable {
 
 		case let .binary(url):
 			return url.name
+            
+        case let .pod(info):
+            return (info).name
 		}
 	}
 
@@ -54,6 +60,17 @@ public enum Dependency: Hashable {
 	public var xcframeworkPath: String {
 		return (Constants.binariesFolderPath as NSString).appendingPathComponent("\(name).xcframework")
 	}
+    
+    /// Check is Pod
+    public var isPod: Bool {
+        switch self {
+        case .binary, .git, .gitHub:
+            return false
+            
+        case .pod:
+            return true
+        }
+    }
 }
 
 extension Dependency {
@@ -133,7 +150,11 @@ extension Dependency: Scannable {
 					return .failure(ScannableError(message: "invalid URL found for dependency type `binary`", currentLine: scanner.currentLine))
 				}
 			}
-		} else {
+        } else if scanner.scanString("pod", into: nil) {
+            parser = { name in
+                return .success(Dependency.pod(PodInfo(name: name)))
+            }
+        } else {
 			return .failure(ScannableError(message: "unexpected dependency type", currentLine: scanner.currentLine))
 		}
 
@@ -173,6 +194,9 @@ extension Dependency: CustomStringConvertible {
 
 		case let .binary(binary):
 			return "binary \"\(binary)\""
+            
+        case let .pod(info):
+            return "pod \"\(info.name)\""
 		}
 	}
 }
@@ -193,6 +217,9 @@ extension Dependency {
 
 		case .binary:
 			return nil
+            
+        case .pod:
+            return GitURL("https://github.com/CocoaPods/Specs.git")
 		}
 	}
 }

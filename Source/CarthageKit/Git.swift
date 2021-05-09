@@ -131,6 +131,20 @@ public func fetchRepository(_ repositoryFileURL: URL, remoteURL: GitURL? = nil, 
 		})
 }
 
+public func pullRepository(_ repositoryFileURL: URL, remoteURL: GitURL? = nil) -> SignalProducer<String, CarthageError> {
+    precondition(repositoryFileURL.isFileURL)
+
+    var arguments = [ "pull", "--prune", "--quiet" ]
+    if let remoteURL = remoteURL {
+        arguments.append(remoteURL.urlString)
+    }
+
+    return launchGitTask(arguments, repositoryFileURL: repositoryFileURL)
+        .on(completed: {
+            FetchCache.updateLastFetchTime(forURL: remoteURL)
+        })
+}
+
 /// Sends each tag found in the given Git repository.
 public func listTags(_ repositoryFileURL: URL) -> SignalProducer<String, CarthageError> {
 	return launchGitTask([ "tag", "--column=never" ], repositoryFileURL: repositoryFileURL)
