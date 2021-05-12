@@ -219,7 +219,7 @@ extension Dependency {
 			return nil
             
         case .pod:
-            return GitURL("https://github.com/CocoaPods/Specs.git")
+            return CocoaPods.specsGitURL
 		}
 	}
 }

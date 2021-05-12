@@ -299,7 +299,8 @@ public final class Project { // swiftlint:disable:this type_body_length
             
         case .pod:
             fetchVersions = cloneOrFetchDependency(dependency)
-                .map { _ in PinnedVersion("master") }
+                .flatMap(.merge) { repositoryURL in listTags(repositoryURL) }
+                .map { PinnedVersion($0) }
 		}
 
 		return SignalProducer<Project.CachedVersions, CarthageError>(value: self.cachedVersions)
@@ -348,7 +349,7 @@ public final class Project { // swiftlint:disable:this type_body_length
 		tryCheckoutDirectory: Bool
 	) -> SignalProducer<(Dependency, VersionSpecifier), CarthageError> {
 		switch dependency {
-		case .git, .gitHub:
+		case .git, .gitHub, .pod:
 			let revision = version.commitish
 			let cartfileFetch: SignalProducer<Cartfile, CarthageError> = self.cloneOrFetchDependency(dependency, commitish: revision)
 				.flatMap(.concat) { repositoryURL in
@@ -356,15 +357,19 @@ public final class Project { // swiftlint:disable:this type_body_length
 				}
 				.flatMapError { _ in .empty }
 				.attemptMap(Cartfile.from(string:))
+            
+            log(msg: "[dependencies] tryCheckoutDirectory = \(tryCheckoutDirectory)")
 
 			let cartfileSource: SignalProducer<Cartfile, CarthageError>
 			if tryCheckoutDirectory {
 				let dependencyURL = self.directoryURL.appendingPathComponent(dependency.relativePath)
+                log(msg: "[dependencies] dependencyURL = \(dependencyURL.path)")
 				cartfileSource = SignalProducer<Bool, NoError> { () -> Bool in
 					var isDirectory: ObjCBool = false
 					return FileManager.default.fileExists(atPath: dependencyURL.path, isDirectory: &isDirectory) && isDirectory.boolValue
 				}
 				.flatMap(.concat) { directoryExists -> SignalProducer<Cartfile, CarthageError> in
+                    log(msg: "[dependencies] directoryExists = \(directoryExists)")
 					if directoryExists {
 						return SignalProducer(result: Cartfile.from(file: dependencyURL.appendingPathComponent(Constants.Project.cartfilePath)))
 							.flatMapError { _ in .empty }
@@ -378,15 +383,13 @@ public final class Project { // swiftlint:disable:this type_body_length
 			}
 			return cartfileSource
 				.flatMap(.concat) { cartfile -> SignalProducer<(Dependency, VersionSpecifier), CarthageError> in
-					return SignalProducer(cartfile.dependencies.map { ($0.0, $0.1) })
+					// return SignalProducer(cartfile.dependencies.map { ($0.0, $0.1) })
+                    fatalError()
 				}
 
 		case .binary:
 			// Binary-only frameworks do not support dependencies
 			return .empty
-            
-        case .pod:
-            fatalError("Not implement")
 		}
 	}
 
@@ -896,6 +899,7 @@ public final class Project { // swiftlint:disable:this type_body_length
 		submodulesByPath: [String: Submodule]
 	) -> SignalProducer<(), CarthageError> {
 		let revision = version.commitish
+        log(msg: "[checkoutOrCloneDependency] \(dependency.name), revision = \(revision), submodulesByPath.count = \(submodulesByPath.count)")
 		return cloneOrFetchDependency(dependency, commitish: revision)
 			.flatMap(.merge) { repositoryURL -> SignalProducer<(), CarthageError> in
 				let workingDirectoryURL = self.directoryURL.appendingPathComponent(dependency.relativePath, isDirectory: true)
@@ -1009,12 +1013,10 @@ public final class Project { // swiftlint:disable:this type_body_length
 				return SignalProducer<(Dependency, PinnedVersion), CarthageError>(dependencies)
 					.flatMap(.concurrent(limit: 4)) { dependency, version -> SignalProducer<(), CarthageError> in
 						switch dependency {
-						case .git, .gitHub:
+						case .git, .gitHub, .pod:
 							return self.checkoutOrCloneDependency(dependency, version: version, submodulesByPath: submodulesByPath)
 						case .binary:
 							return .empty
-                        case .pod:
-                            fatalError("Not implement")
 						}
 					}
 			}
@@ -1618,6 +1620,8 @@ public func cloneOrFetch(
 	destinationURL: URL = Constants.Dependency.repositoriesURL,
 	commitish: String? = nil
 ) -> SignalProducer<(ProjectEvent?, URL), CarthageError> {
+    log(msg: "[cloneOrFetch] \(dependency.name), commitish = \(commitish ?? "nil"), preferHTTPS = \(preferHTTPS), destinationURL = \(destinationURL.path)")
+    
 	let fileManager = FileManager.default
 	let repositoryURL = repositoryFileURL(for: dependency, baseURL: destinationURL)
 
@@ -1630,8 +1634,10 @@ public func cloneOrFetch(
 		.flatMap(.merge) { (gitURL: GitURL) -> SignalProducer<(ProjectEvent?, URL), CarthageError> in
             let cloneOrPullSpecs: SignalProducer<GitURL, CarthageError>
             
+            log(msg: "[cloneOrFetch] \(dependency.name), isPod = \(dependency.isPod)")
+            
             if dependency.isPod {
-                cloneOrPullSpecs = podCloneOrFetch(dependency: dependency, remoteURL: gitURL, destinationURL: destinationURL)
+                cloneOrPullSpecs = CocoaPods.findDependencyGitURL(dependency: dependency, destinationURL: destinationURL)
             } else {
                 cloneOrPullSpecs = SignalProducer<GitURL, CarthageError>.init(value: gitURL)
             }
@@ -1641,6 +1647,8 @@ public func cloneOrFetch(
                     return isGitRepository(repositoryURL).map { ($0, gitURL) }
                 }
 				.flatMap(.merge) { isRepository, remoteURL -> SignalProducer<(ProjectEvent?, URL), CarthageError> in
+                    log(msg: "[cloneOrFetch] \(dependency.name), isRepository = \(isRepository), remoteURL = \(remoteURL.urlString)")
+                    
 					if isRepository {
 						let fetchProducer: () -> SignalProducer<(ProjectEvent?, URL), CarthageError> = {
 							guard FetchCache.needsFetch(forURL: remoteURL) else {
@@ -1684,104 +1692,6 @@ public func cloneOrFetch(
 					}
 				}
 		}
-}
-
-private func podCloneOrFetch(dependency: Dependency, remoteURL: GitURL, destinationURL: URL) -> SignalProducer<GitURL, CarthageError> {
-    let fileManager = FileManager.default
-    let specsRepositoryURL = repositoryPodSpecsURL(baseURL: destinationURL)
-    
-    return isGitRepository(specsRepositoryURL)
-        .flatMap(.merge) { isRepository -> SignalProducer<String, CarthageError> in
-            if isRepository {
-                // TODO implement pull request
-                /*guard FetchCache.needsFetch(forURL: remoteURL) else {
-                    return SignalProducer<String, CarthageError>.init(value: "")
-                }
-                
-                return pullRepository(specsRepositoryURL)*/
-                return SignalProducer<String, CarthageError>.init(value: "")
-            } else {
-                _ = try? fileManager.removeItem(at: specsRepositoryURL)
-                return cloneRepository(remoteURL, specsRepositoryURL, isBare: false)
-            }
-        }
-        .flatMap(.merge) { _ -> SignalProducer<String, CarthageError> in
-            let urlSpecs = specsRepositoryURL.appendingPathComponent("Specs", isDirectory: true)
-            
-            if let specsPath = findPodSpec(url: urlSpecs, name: dependency.name) {
-                return SignalProducer<String, CarthageError>.init(value: specsPath)
-            } else {
-                fatalError("Not implement") // Spec not found
-            }
-        }
-        .map { specsPath -> GitURL in
-            let path = specsRepositoryURL.appendingPathComponent("Specs/\(specsPath)", isDirectory: true)
-            
-            if let latestVersion = findLatestVersion(path: path.path) {
-                let jsonPath = path.appendingPathComponent("\(latestVersion)/\(dependency.name).podspec.json")
-                let jsonDecoder = JSONDecoder()
-                
-                if let jsonData = try? Data(contentsOf: jsonPath),
-                   let json = try? jsonDecoder.decode(PodSpecInfo.self, from: jsonData),
-                   let gitURL = json.source.git {
-                    return GitURL(gitURL)
-                } else {
-                    fatalError("Not implement") // Can not open file, or decode error
-                }
-            } else {
-                fatalError("Not implement") // Spec not found
-            }
-        }
-}
-
-private func findLatestVersion(path: String) -> String? {
-    let versions: [(SemanticVersion, String)]
-    
-    do {
-        versions = try FileManager.default.contentsOfDirectory(atPath: path)
-            .compactMap { str -> (SemanticVersion, String)? in
-                if let value = SemanticVersion.from(PinnedVersion(str)).value {
-                    return (value, str)
-                } else {
-                    return nil
-                }
-            }
-    } catch {
-        return nil
-    }
-    
-    let latestVersion = versions.max { left, right -> Bool in
-        return left.0 < right.0
-    }
-    
-    return latestVersion?.1
-}
-
-private func findPodSpec(url: URL, name: String, depth: Int = 0) -> String? {
-    let directoryContents: [String]
-    
-    do {
-        directoryContents = try FileManager.default.contentsOfDirectory(atPath: url.path)
-    } catch {
-        return nil
-    }
-    
-    if depth >= 3 {
-        for item in directoryContents {
-            if item == name {
-                return item
-            }
-        }
-    } else {
-        for item in directoryContents {
-            let childUrl = url.appendingPathComponent(item, isDirectory: true)
-            if let value = findPodSpec(url: childUrl, name: name, depth: depth + 1) {
-                return "\(item)/\(value)"
-            }
-        }
-    }
-    
-    return nil
 }
 
 private func binaryAssetPrioritization(forName assetName: String) -> (keyName: String, priority: UInt8) {

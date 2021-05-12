@@ -143,7 +143,8 @@ public struct BuildArguments {
         if useStaticLibFormat {
             args += [
                 "MACH_O_TYPE=\(MachOType.staticlib)",
-                "DEBUG_INFORMATION_FORMAT=dwarf"
+                "DEBUG_INFORMATION_FORMAT=dwarf",
+                "BUILD_LIBRARY_FOR_DISTRIBUTION=YES"
             ]
         }
 
