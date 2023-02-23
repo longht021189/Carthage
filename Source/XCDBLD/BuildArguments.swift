@@ -136,6 +136,10 @@ public struct BuildArguments {
 		args += [ "CODE_SIGNING_REQUIRED=NO", "CODE_SIGN_IDENTITY=" ]
 
 		args += [ "CARTHAGE=YES" ]
+        
+        if let extra = getEnvironments().buildArguments, !extra.isEmpty {
+            args += extra
+        }
 
 		return args
 	}
