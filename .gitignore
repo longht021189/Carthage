@@ -23,3 +23,7 @@ DerivedData
 Carthage.pkg
 CarthageApp.pkg
 Carthage.xcodeproj/
+
+# Swift PM
+#
+/.swiftpm
