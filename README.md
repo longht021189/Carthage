@@ -385,6 +385,11 @@ It is possible to use travis-ci in order to build and upload your tagged release
 
 If you embed many dynamic frameworks into your app, its pre-main launch times may be quite slow. Carthage is able to help mitigate this by building your dynamic frameworks as static frameworks instead. Static frameworks can be linked directly into your application or merged together into a larger dynamic framework with a few simple modifications to your workflow, which can result in dramatic reductions in pre-main launch times.
 
+To build static frameworks, you declares this environment
+```
+BUILD_STATIC_ONLY="true"
+```
+
 #### Carthage 0.30.0 or higher
 
 Since version 0.30.0 Carthage project rolls out support for statically linked frameworks written in Swift or Objective-C, support for which has been introduced in Xcode 9.4. Please note however that it specifically says *frameworks*, hence Darwin bundles with **.framework** extension and statically linked object archives inside. Carthage does not currently support static *library* schemes, nor are there any plans to introduce their support in the future.
